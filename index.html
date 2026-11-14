@@ -216,16 +216,10 @@ body.padmode #t-b{right:calc(78px + env(safe-area-inset-right,0px))}
 body.padmode #padui{padding:84px 24px 24px;z-index:6}
 .hbtn.leave{border-color:#7a3b34}
 .leave.armed{background:#e5484d!important;border-color:#e5484d!important;color:#fff!important}
-#pad-leave,#pad-fs{min-height:40px;padding:6px 14px;font-size:13px}
+#pad-leave{min-height:40px;padding:6px 14px;font-size:13px}
 body.padmode #pad-leave{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:calc(12px + env(safe-area-inset-left,0px))}
-body.padmode #pad-fs{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:calc(136px + env(safe-area-inset-left,0px))}
-@media (max-width:600px){body.padmode #pad-fs{left:calc(12px + env(safe-area-inset-left,0px));top:calc(56px + env(safe-area-inset-top,0px))}}
 .lockrow{display:flex;gap:10px;align-items:center;font-size:13px;cursor:pointer}
 .lockrow input{width:20px;height:20px;accent-color:var(--accent);margin:0}
-#fs-help{position:fixed;inset:0;z-index:40;background:rgba(10,8,6,.85);display:grid;place-items:center;padding:20px}
-#fs-help[hidden]{display:none}
-#fs-help .panel{max-width:440px;font-size:14px;gap:.7em}
-#fs-help ol{margin:0;padding-left:1.2em;display:grid;gap:.4em}
 body.padmode #padui p{font-size:13px}
 @media (max-height:360px){body.padmode #padui .swatch{display:none}body.padmode #padui h2{font-size:18px}}
 /* phone garage: shown in the TV lobby instead of the sticks */
@@ -310,12 +304,7 @@ body.display #h-room{display:inline}
   <div class="tb small" id="t-rb" data-b="5">RB</div>
 </div>
 <div id="padcust" aria-live="polite"></div>
-<div id="fs-help" hidden><div class="panel"><h2 style="margin:0" id="fs-help-title">Full screen</h2>
-  <p class="note" style="margin:0" id="fs-help-why"></p>
-  <ol id="fs-help-steps"></ol>
-  <p class="note" style="margin:0">The thin swipe bar at the very bottom of the iPhone always stays (iOS doesn't let any app turn it off), but it ignores short taps.</p>
-  <button id="fs-help-close" class="pbtn" type="button">Got it</button></div></div>
-<div id="padui"><div class="swatch" id="pad-swatch"></div><h2 id="pad-title">Phone controller</h2><p id="pad-msg">Connecting…</p><button id="pad-leave" class="pbtn ghost leave" type="button" hidden>Leave room</button><button id="pad-fs" class="pbtn ghost" type="button" hidden>⛶ Full screen</button><button id="pad-retry" class="pbtn ghost" type="button" hidden>Try again</button></div>
+<div id="padui"><div class="swatch" id="pad-swatch"></div><h2 id="pad-title">Phone controller</h2><p id="pad-msg">Connecting…</p><button id="pad-leave" class="pbtn ghost leave" type="button" hidden>Leave room</button><button id="pad-retry" class="pbtn ghost" type="button" hidden>Try again</button></div>
 <div id="rotate">Turn your phone sideways to play.</div>
 <div id="net" hidden>
   <div class="net-card" role="dialog" aria-modal="true" aria-labelledby="net-title">
@@ -4190,7 +4179,6 @@ function custHTML(i, sl, n, unl) {
       <canvas id="pc-prev" width="640" height="360" aria-label="Your tank"></canvas>
       <div class="pc-name">${S.name}</div><p class="pc-desc">${esc(S.desc || 'The all-rounder: bouncing shells and mines.')}</p>
       <div class="pc-actions" style="margin-top:10px"><button type="button" class="pbtn" data-pc="start">Start game</button><button type="button" class="pbtn ghost leave" data-pc="leaveroom">Leave room</button></div>
-      ${isStandalone() ? '' : `<div class="pc-actions" style="margin-top:8px"><button type="button" class="pbtn ghost" data-pc="fs">${fsLabel()}</button></div>`}
     </div>
     <div class="pc-right">
       <h3>Color · ${COLORS[sl.color][0]}</h3><div class="sw-row">${sw}</div>
@@ -4208,7 +4196,6 @@ padCustEl.addEventListener('click', e => {
     case 'start': pressPad(9); break;
     case 'leave': pressPad(1); break;
     case 'leaveroom': armLeave(b); break;
-    case 'fs': controllerFullscreen(); break;
     case 'color': if (i >= 0) setPref(i, { color: +v }); break;
     case 'trail': if (i >= 0) setPref(i, { trail: +v }); break;
     case 'tank': if (i >= 0 && unlockedChassis().includes(v)) setPref(i, { chassis: v }); break;
@@ -4297,7 +4284,6 @@ function updatePadUi() {
       : `Level ${G.level} · ${G.lives} ${G.lives === 1 ? 'life' : 'lives'}. Left stick moves, right stick aims (push far to fire), A lays a mine, ☰ pauses.`;
   }
   $('#pad-leave').hidden = NET.mode !== 'client';
-  $('#pad-fs').hidden = isStandalone(); // a Home Screen app already has no browser bars
   const col = sl ? slotColor(i) : 'transparent', key = title + '|' + msg + '|' + col;
   if (key === lastPadUi) return; lastPadUi = key;
   $('#pad-title').textContent = title; $('#pad-msg').textContent = msg; $('#pad-swatch').style.background = col;
@@ -4364,45 +4350,9 @@ function toggleFullscreen() {
   } catch (e) {}
 }
 $('#fs-btn').addEventListener('click', () => { $('#fs-btn').blur(); toggleFullscreen(); });
-// Already without browser bars: real full screen, or opened from the Home Screen as an app
-const isStandalone = () => !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches));
-const isFullscreenish = () => !!(document.fullscreenElement || document.webkitFullscreenElement) || isStandalone();
-// Controller full screen: where the browser allows it (Android Chrome, iPad) hide the bars and lock landscape;
-// iPhone Safari can't, so explain the Home Screen way instead
-const isIOS = () => /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-// iPhone browsers all run on Apple's Safari engine, which can't hide its bars for a web page; a Home Screen app has none
-function showFsHelp() {
-  const ua = navigator.userAgent, chrome = /CriOS/.test(ua), firefox = /FxiOS/.test(ua), edge = /EdgiOS/.test(ua);
-  const name = chrome ? 'Chrome' : firefox ? 'Firefox' : edge ? 'Edge' : 'Safari';
-  $('#fs-help-title').textContent = `Full screen in ${name} on iPhone`;
-  $('#fs-help-why').textContent = isIOS()
-    ? `On iPhone, ${name === 'Safari' ? 'Safari' : name + ' runs on Apple\'s Safari engine, and Apple'} doesn't let any browser hide its bars for a web page. Add the game to your Home Screen instead: it then opens full screen with no browser bars at all.`
-    : 'This browser does not allow full screen here. Add the game to your Home Screen (or install it from the browser menu) to play without browser bars.';
-  const share = chrome ? 'Tap the <b>Share</b> button at the right end of Chrome\'s address bar (or ⋯ → <b>Share</b>).'
-    : firefox ? 'Tap the menu button (☰) and then <b>Share</b>.'
-    : edge ? 'Tap the menu button (⋯) and then <b>Share</b>.'
-    : 'Tap the <b>Share</b> button (the square with an arrow).';
-  $('#fs-help-steps').innerHTML = `<li>${share}</li><li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>. (Needs iOS 16.4 or newer in ${name}.)</li>`
-    + `<li>Open <b>Tank Team</b> from your Home Screen and tap <b>Be the controller for room ${esc(PAD.code || store.get('rr-last-room', '') || '…')}</b>.</li>`;
-  $('#fs-help').hidden = false;
-}
-const inFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
-// Controller full screen works like the TV-mode button: one tap toggles it. Only where the browser has no full screen for
-// pages at all (iPhone, whatever the browser) does it show the Home Screen steps instead.
-function controllerFullscreen() {
-  if (inFullscreen()) { toggleFullscreen(); return; }
-  if (!canFullscreen()) { showFsHelp(); return; }
-  try {
-    const r = (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen).call(fsEl, { navigationUI: 'hide' });
-    if (r && r.then) r.then(() => { try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) {} }, () => { if (isIOS()) showFsHelp(); });
-  } catch (e) { if (isIOS()) showFsHelp(); }
-}
-const fsLabel = () => inFullscreen() ? '✕ Exit full screen' : '⛶ Full screen';
-$('#pad-fs').addEventListener('click', e => { e.currentTarget.blur(); controllerFullscreen(); });
-$('#fs-help-close').addEventListener('click', () => { $('#fs-help').hidden = true; });
 for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(ev, () => {
   lastCust = ''; resize();
-  $('#pad-fs').textContent = fsLabel(); $('#fs-btn').textContent = inFullscreen() ? 'Exit full screen' : 'Full screen';
+  $('#fs-btn').textContent = document.fullscreenElement || document.webkitFullscreenElement ? 'Exit full screen' : 'Full screen';
 });
 // Keep the screen on while hosting for a TV or using a phone as a controller
 let wakeLock = null;

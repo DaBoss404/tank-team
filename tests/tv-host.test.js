@@ -122,7 +122,7 @@ async function until(fn, ms = 4000) { const t0 = Date.now(); while (Date.now() -
     await ctx.close();
   }
 
-  // ---------- 2c. iPhone Chrome: no Fullscreen API, Home Screen route ----------
+  // ---------- 2c. iPhone Chrome: clean address, reload, one-tap rejoin ----------
   {
     const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true,
       userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.73 Mobile/15E148 Safari/604.1' });
@@ -138,10 +138,6 @@ async function until(fn, ms = 4000) { const t0 = Date.now(); while (Date.now() -
     await until(async () => (await ip.textContent('#pad-title')).startsWith('Room'));
     check('iPhone: room link is removed from the address (Add to Home Screen saves the game)', await ip.evaluate(() => location.hash === ''));
     await ip.click('#padcust [data-pc="join"]'); await wait(300);
-    await ip.click('#padcust [data-pc="fs"]'); await wait(300);
-    const help = await ip.evaluate(() => ({ shown: !document.querySelector('#fs-help').hidden, text: document.querySelector('#fs-help').textContent }));
-    check('iPhone Chrome: Full screen explains the Home Screen way, with Chrome steps', help.shown && /Chrome/.test(help.text) && /Add to Home Screen/.test(help.text) && new RegExp(code).test(help.text), help.text.slice(0, 120));
-    await ip.click('#fs-help-close');
     await ip.reload(); await until(async () => (await ip.textContent('#pad-title')).length > 0);
     check('iPhone: reloading the controller page stays a controller', await until(() => ip.evaluate(() => document.body.classList.contains('padmode'))));
     await ip.click('#padcust [data-pc="leaveroom"]'); await ip.click('#padcust [data-pc="leaveroom"]'); await wait(600);
@@ -233,7 +229,7 @@ async function until(fn, ms = 4000) { const t0 = Date.now(); while (Date.now() -
   for (const [w, h] of [[844, 390], [844, 320], [667, 325], [568, 300], [390, 664], [375, 560]]) {
     await P1.setViewportSize({ width: w, height: h }); await wait(120);
     const bad = await P1.evaluate(() => {
-      const els = ['#t-a', '#t-b', '#t-start', '#pad-leave', '#pad-fs'].map(q => [q, document.querySelector(q).getBoundingClientRect()]);
+      const els = ['#t-a', '#t-b', '#t-start', '#pad-leave'].map(q => [q, document.querySelector(q).getBoundingClientRect()]);
       const out = [];
       for (const [q, r] of els) if (r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight) out.push(q + ' off-screen');
       for (let x = 0; x < els.length; x++) for (let y = x + 1; y < els.length; y++) { const [qa, a] = els[x], [qb, b] = els[y]; if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) out.push(qa + ' overlaps ' + qb); }
@@ -252,12 +248,7 @@ async function until(fn, ms = 4000) { const t0 = Date.now(); while (Date.now() -
   const mines0 = await G(tv, () => RR_DEBUG.G.mines.filter(m => m.team === 'p').length);
   await tap(P1, '#t-a'); await wait(300);
   check('A still lays a mine without the MINE button', (await G(tv, () => RR_DEBUG.G.mines.filter(m => m.team === 'p').length)) > mines0);
-  await P1.click('#pad-fs'); await wait(600);
-  const fs1 = await P1.evaluate(() => ({ fs: !!document.fullscreenElement, help: !document.querySelector('#fs-help').hidden, label: document.querySelector('#pad-fs').textContent }));
-  check('Full screen: one tap goes full screen, no pop-up (like TV mode)', fs1.fs && !fs1.help && /Exit/.test(fs1.label), JSON.stringify(fs1));
-  await P1.click('#pad-fs'); await wait(600);
-  const fs2 = await P1.evaluate(() => ({ fs: !!document.fullscreenElement, label: document.querySelector('#pad-fs').textContent }));
-  check('Full screen: tapping again exits', !fs2.fs && /⛶ Full screen/.test(fs2.label), JSON.stringify(fs2));
+  check('phone controller has no Full screen button', await P1.evaluate(() => !document.querySelector('#pad-fs') && !document.querySelector('[data-pc="fs"]')));
   // a quick second tap is not allowed to zoom the page
   const blocked = await P1.evaluate(() => {
     const t = document.querySelector('#padui');
