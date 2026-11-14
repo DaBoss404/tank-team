@@ -252,9 +252,12 @@ async function until(fn, ms = 4000) { const t0 = Date.now(); while (Date.now() -
   const mines0 = await G(tv, () => RR_DEBUG.G.mines.filter(m => m.team === 'p').length);
   await tap(P1, '#t-a'); await wait(300);
   check('A still lays a mine without the MINE button', (await G(tv, () => RR_DEBUG.G.mines.filter(m => m.team === 'p').length)) > mines0);
-  await P1.click('#pad-fs'); await wait(900);
-  check('Full screen button goes full screen or shows how (iPhone)', await P1.evaluate(() => !!document.fullscreenElement || !document.querySelector('#fs-help').hidden));
-  await P1.evaluate(() => { if (document.fullscreenElement) document.exitFullscreen(); document.querySelector('#fs-help').hidden = true; }); await wait(200);
+  await P1.click('#pad-fs'); await wait(600);
+  const fs1 = await P1.evaluate(() => ({ fs: !!document.fullscreenElement, help: !document.querySelector('#fs-help').hidden, label: document.querySelector('#pad-fs').textContent }));
+  check('Full screen: one tap goes full screen, no pop-up (like TV mode)', fs1.fs && !fs1.help && /Exit/.test(fs1.label), JSON.stringify(fs1));
+  await P1.click('#pad-fs'); await wait(600);
+  const fs2 = await P1.evaluate(() => ({ fs: !!document.fullscreenElement, label: document.querySelector('#pad-fs').textContent }));
+  check('Full screen: tapping again exits', !fs2.fs && /⛶ Full screen/.test(fs2.label), JSON.stringify(fs2));
   // a quick second tap is not allowed to zoom the page
   const blocked = await P1.evaluate(() => {
     const t = document.querySelector('#padui');
