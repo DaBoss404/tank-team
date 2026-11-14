@@ -220,6 +220,8 @@ body.padmode #padui{padding:84px 24px 24px;z-index:6}
 body.padmode #pad-leave{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:calc(12px + env(safe-area-inset-left,0px))}
 body.padmode #pad-fs{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:calc(136px + env(safe-area-inset-left,0px))}
 @media (max-width:600px){body.padmode #pad-fs{left:calc(12px + env(safe-area-inset-left,0px));top:calc(56px + env(safe-area-inset-top,0px))}}
+.lockrow{display:flex;gap:10px;align-items:center;font-size:13px;cursor:pointer}
+.lockrow input{width:20px;height:20px;accent-color:var(--accent);margin:0}
 #fs-help{position:fixed;inset:0;z-index:40;background:rgba(10,8,6,.85);display:grid;place-items:center;padding:20px}
 #fs-help[hidden]{display:none}
 #fs-help .panel{max-width:440px;font-size:14px;gap:.7em}
@@ -335,6 +337,7 @@ body.display #h-room{display:inline}
       <button id="net-voice" class="pbtn ghost" type="button">Turn voice chat on</button>
     </div>
     <p id="net-status" role="status"></p>
+    <label class="lockrow" id="net-lockrow"><input type="checkbox" id="net-lock"> <span>Keep the same room code every time <b id="net-lock-code"></b></span></label>
     <p class="note" id="net-relay"></p>
     <div class="btnrow"><button id="net-leave" class="pbtn ghost" type="button" hidden>Leave room</button><button id="net-close" class="pbtn ghost" type="button">Close</button></div>
   </div>
@@ -3018,18 +3021,28 @@ function setNetStatus(msg, err) { NET.status = msg || ''; NET.err = !!err; rende
 
 // ---------- online: host ----------
 function hostRoom(display) {
-  if (NET.mode !== 'off' || NET.peer) return;
+  if (NET.mode !== 'off' || NET.peer || NET.hostWait) return;
   NET.wantDisplay = !!display;
   setNetStatus('Opening a room…');
   loadPeer().then(() => openHostPeer(0), () => setNetStatus('Could not load the online module. Check your internet connection.', true));
 }
+// Locked room code: saved on this device ({ on, code }); hosting reuses it so QR codes and Home Screen shortcuts keep working
+const roomLock = () => { const l = store.get('rr-room-lock', null); return l && l.on ? l : null; };
+function setRoomLock(on) {
+  const cur = store.get('rr-room-lock', null) || {};
+  store.set('rr-room-lock', { on: !!on, code: on ? (NET.mode === 'host' ? NET.code : cur.code || '') : cur.code || '' });
+  if (!on && NET.hostWait) { clearTimeout(NET.hostWait); NET.hostWait = 0; openHostPeer(0); } // stop waiting for the old code
+  renderNet(); lastOv = null;
+}
 function openHostPeer(attempt) {
-  const code = genCode();
+  NET.hostWait = 0;
+  const lock = roomLock(), code = lock && /^[A-Z0-9]{5}$/.test(lock.code || '') ? lock.code : genCode();
   let peer;
   try { peer = new window.Peer(PREFIX + code, peerOpts()); } catch (e) { setNetStatus(netErr(e), true); return; }
   NET.peer = peer;
   peer.on('open', id => {
     NET.mode = 'host'; NET.myId = id; NET.hostId = id; NET.code = code; NET.conns = {}; NET.events = []; NET.held = {};
+    if (roomLock()) store.set('rr-room-lock', { on: true, code }); // first time: this code becomes the locked one
     if (NET.wantDisplay) enterDisplayMode();
     updateRoster();
     setNetStatus(NET.display ? 'TV room open. Players scan the QR code with their phones.' : 'Room open. Share the code with your friends.');
@@ -3042,7 +3055,13 @@ function openHostPeer(attempt) {
     if (NET.mode === 'off') {
       try { peer.destroy(); } catch (x) {}
       NET.peer = null;
-      if (e.type === 'unavailable-id' && attempt < 4) openHostPeer(attempt + 1); else setNetStatus(netErr(e), true);
+      const locked = roomLock() && roomLock().code === code;
+      if (e.type === 'unavailable-id' && locked && attempt < 30) {
+        // the matchmaking server still remembers this code from the last game for up to about a minute
+        setNetStatus(`Room ${code} is still closing from last time. Trying again… (${attempt + 1})`);
+        NET.hostWait = setTimeout(() => openHostPeer(attempt + 1), 3000);
+      } else if (e.type === 'unavailable-id' && locked) setNetStatus(`Room code ${code} is in use. Untick "Keep the same room code" to get a new one.`, true);
+      else if (e.type === 'unavailable-id' && attempt < 4) openHostPeer(attempt + 1); else setNetStatus(netErr(e), true);
     } else console.warn('peer error', e.type);
   });
 }
@@ -3399,7 +3418,11 @@ function renderNet() {
   $('#net-online').hidden = !on; $('#net-online').style.display = on ? 'flex' : 'none';
   $('#net-leave').hidden = !on;
   $('#leave-btn').hidden = !on;
-  $('#net-host').disabled = $('#net-host-tv').disabled = $('#net-join').disabled = !!NET.peer && !on;
+  $('#net-host').disabled = $('#net-host-tv').disabled = $('#net-join').disabled = (!!NET.peer || !!NET.hostWait) && !on;
+  const lk = store.get('rr-room-lock', null);
+  $('#net-lockrow').hidden = NET.mode === 'client';
+  $('#net-lock').checked = !!(lk && lk.on);
+  $('#net-lock-code').textContent = lk && lk.on ? (lk.code ? `(${lk.code})` : '(the next code you host)') : '';
   $('#net-room').textContent = NET.code;
   $('#net-title').textContent = NET.display ? 'TV display mode' : 'Play online';
   $('#net-hint').textContent = NET.display
@@ -3423,6 +3446,7 @@ voiceBtn.addEventListener('click', () => { voiceBtn.blur(); toggleVoice(); });
 $('#net-close').addEventListener('click', closeNet);
 netEl.addEventListener('click', e => { if (e.target === netEl) closeNet(); });
 $('#net-host').addEventListener('click', () => hostRoom(false));
+$('#net-lock').addEventListener('change', e => setRoomLock(e.target.checked));
 $('#net-host-tv').addEventListener('click', () => { unlockAudio(); hostRoom(true); });
 $('#net-join').addEventListener('click', () => joinRoom(codeIn.value));
 $('#net-pad').addEventListener('click', () => { unlockAudio(); startPadMode(codeIn.value); });
@@ -4321,7 +4345,7 @@ function lobbyHTML() {
   const waiting = phones - new Set(G.slots.filter(Boolean).map(sl => sl.dev.split(':')[1])).size;
   return `<div class="panel lobby">
     <div class="lobby-top"><div class="qrbig">${qrImg(NET.code)}</div>
-      <div><div class="eyebrow">Tank Team · TV display</div><div class="lbl">Room code</div><div class="bigcode">${esc(NET.code)}</div>
+      <div><div class="eyebrow">Tank Team · TV display</div><div class="lbl">Room code${roomLock() ? ' · 🔒 the same every time' : ''}</div><div class="bigcode">${esc(NET.code)}</div>
       <div class="note">Scan the QR code with a phone camera, or open <b>${esc(location.host + location.pathname)}</b> on the phone, tap <b>Play online</b>, enter the code and tap <b>Use this phone as a controller</b>.</div></div></div>
     <div class="slots">${[0, 1, 2, 3].map(card).join('')}</div>
     <div class="go">${n ? `${n}/4 ready · press ☰ on any joined phone to start` : 'Press A on your phone to join'}</div>

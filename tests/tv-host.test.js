@@ -93,6 +93,35 @@ async function until(fn, ms = 4000) { const t0 = Date.now(); while (Date.now() -
     await ctx.close();
   }
 
+  // ---------- 2d. locked room code ----------
+  {
+    const ctx = await b.newContext({ viewport: { width: 1280, height: 800 } });
+    await ctx.addInitScript({ path: path.join(__dirname, 'fakepeer.js') });
+    // lets the test pretend the matchmaking server still remembers a code: the next N rooms report "id taken"
+    await ctx.addInitScript(() => { const P = window.Peer; window.__busy = 0; window.Peer = class extends P { constructor(a, o) { super(a, o); if (typeof a === 'string' && window.__busy > 0) { window.__busy--; const em = this.emit.bind(this); this.emit = (e, ...x) => e === 'open' ? em('error', { type: 'unavailable-id' }) : em(e, ...x); } } }; });
+    const h = watch(await ctx.newPage(), 'lock');
+    await h.goto(URL + '#debug'); await wait(300);
+    const host = async () => { await h.click('#net-host'); await h.waitForFunction(() => document.querySelector('#net-room').textContent.length === 5, null, { timeout: 15000 }); return h.textContent('#net-room'); };
+    const leave = async () => { await h.click('#net-leave'); await h.click('#net-leave'); await wait(500); if (await h.evaluate(() => document.querySelector('#net').hidden)) await h.click('#net-btn'); };
+    await h.click('#net-btn');
+    await h.check('#net-lock');
+    check('lock: box says the next hosted code will be kept', /next code/.test(await h.textContent('#net-lock-code')));
+    const c1 = await host();
+    check('lock: hosted code is shown as the locked one', (await h.textContent('#net-lock-code')).includes(c1));
+    await leave(); const c2 = await host();
+    check('lock: hosting again gives the same code', c1 === c2, c1 + ' / ' + c2);
+    await leave(); await h.reload(); await wait(300); await h.click('#net-btn');
+    check('lock: setting is remembered after a reload', await h.isChecked('#net-lock'));
+    await h.evaluate(() => { window.__busy = 2; });
+    await h.click('#net-host');
+    check('lock: if the code is still taken, it says so and waits', await until(async () => /still closing/i.test(await h.textContent('#net-status')), 3000));
+    const c3 = await h.waitForFunction(() => document.querySelector('#net-room').textContent.length === 5, null, { timeout: 15000 }).then(() => h.textContent('#net-room'));
+    check('lock: then opens with the same code', c3 === c1, c3);
+    await leave(); await h.uncheck('#net-lock'); const c4 = await host();
+    check('lock off: hosting gives a new code', c4 !== c1, c4);
+    await ctx.close();
+  }
+
   // ---------- 2c. iPhone Chrome: no Fullscreen API, Home Screen route ----------
   {
     const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true,
