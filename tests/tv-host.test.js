@@ -174,20 +174,28 @@ async function until(fn, ms = 4000) { const t0 = Date.now(); while (Date.now() -
   for (const [w, h] of [[844, 390], [844, 320], [667, 325], [568, 300], [390, 664], [375, 560]]) {
     await P1.setViewportSize({ width: w, height: h }); await wait(120);
     const bad = await P1.evaluate(() => {
-      const els = ['#t-a', '#t-b', '#t-start', '#t-lb', '#t-rb', '#t-mine'].map(q => [q, document.querySelector(q).getBoundingClientRect()]);
+      const els = ['#t-a', '#t-b', '#t-start', '#pad-leave', '#pad-fs'].map(q => [q, document.querySelector(q).getBoundingClientRect()]);
       const out = [];
       for (const [q, r] of els) if (r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight) out.push(q + ' off-screen');
       for (let x = 0; x < els.length; x++) for (let y = x + 1; y < els.length; y++) { const [qa, a] = els[x], [qb, b] = els[y]; if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) out.push(qa + ' overlaps ' + qb); }
-      const lv = document.querySelector('#pad-leave').getBoundingClientRect();
-      for (const [q, r] of els) if (lv.width && lv.left < r.right && r.left < lv.right && lv.top < r.bottom && r.top < lv.bottom) out.push('Leave room overlaps ' + q);
-      const msg = document.querySelector('#pad-msg').getBoundingClientRect(), mine = document.querySelector('#t-mine').getBoundingClientRect();
-      if (msg.bottom > mine.top && msg.right > mine.left && msg.left < mine.right) out.push('status text overlaps MINE');
+      for (const [q, r] of els) if (!r.width) out.push(q + ' not shown');
+      const msg = document.querySelector('#pad-msg').getBoundingClientRect();
+      for (const [q, r] of els) if (msg.left < r.right && r.left < msg.right && msg.top < r.bottom && r.top < msg.bottom) out.push('status text overlaps ' + q);
       return out;
     });
     check(`phone controller layout ${w}×${h}: no overlaps`, bad.length === 0, bad.join(', '));
     if (w === 844 && h === 320) await P1.screenshot({ path: path.join(__dirname, 'out-phone-controller-short.png') });
   }
   await P1.setViewportSize({ width: 844, height: 390 });
+  check('phone controller has no LB, RB or MINE buttons', await P1.evaluate(() => ['#t-lb', '#t-rb', '#t-mine'].every(q => getComputedStyle(document.querySelector(q)).display === 'none')));
+  const lv = await P1.evaluate(() => { const r = document.querySelector('#pad-leave').getBoundingClientRect(); return r.left < 200 && r.top < 70; });
+  check('Leave room sits top-left where LB / RB were', lv);
+  const mines0 = await G(tv, () => RR_DEBUG.G.mines.filter(m => m.team === 'p').length);
+  await tap(P1, '#t-a'); await wait(300);
+  check('A still lays a mine without the MINE button', (await G(tv, () => RR_DEBUG.G.mines.filter(m => m.team === 'p').length)) > mines0);
+  await P1.click('#pad-fs'); await wait(900);
+  check('Full screen button goes full screen or shows how (iPhone)', await P1.evaluate(() => !!document.fullscreenElement || !document.querySelector('#fs-help').hidden));
+  await P1.evaluate(() => { if (document.fullscreenElement) document.exitFullscreen(); document.querySelector('#fs-help').hidden = true; }); await wait(200);
   // a quick second tap is not allowed to zoom the page
   const blocked = await P1.evaluate(() => {
     const t = document.querySelector('#padui');

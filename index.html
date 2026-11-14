@@ -209,16 +209,21 @@ body.padmode #padui{display:flex;position:fixed;inset:0;flex-direction:column;al
 body.padmode #touch .zone{height:100%;width:50%}
 /* phone controller: top row LB RB · ☰ · B A, MINE at the bottom middle, sticks fill the left and right halves */
 body.padmode #touch .tb{top:calc(8px + env(safe-area-inset-top,0px));bottom:auto;margin:0}
-body.padmode #t-lb{left:calc(12px + env(safe-area-inset-left,0px))}
-body.padmode #t-rb{left:calc(64px + env(safe-area-inset-left,0px))}
+body.padmode #t-lb,body.padmode #t-rb,body.padmode #touch #t-mine{display:none!important} /* tanks are picked in the garage; A lays mines */
 body.padmode #t-start{left:calc(50% - 23px)}
 body.padmode #t-a{right:calc(12px + env(safe-area-inset-right,0px))}
 body.padmode #t-b{right:calc(78px + env(safe-area-inset-right,0px))}
-body.padmode #touch #t-mine{top:auto;bottom:calc(12px + env(safe-area-inset-bottom,0px));left:calc(50% - 32px);right:auto;width:64px;height:64px}
-body.padmode #padui{padding:84px 24px 92px;z-index:6}
+body.padmode #padui{padding:84px 24px 24px;z-index:6}
 .hbtn.leave{border-color:#7a3b34}
 .leave.armed{background:#e5484d!important;border-color:#e5484d!important;color:#fff!important}
-#pad-leave{min-height:40px;padding:6px 16px;font-size:13px}
+#pad-leave,#pad-fs{min-height:40px;padding:6px 14px;font-size:13px}
+body.padmode #pad-leave{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:calc(12px + env(safe-area-inset-left,0px))}
+body.padmode #pad-fs{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:calc(136px + env(safe-area-inset-left,0px))}
+@media (max-width:600px){body.padmode #pad-fs{left:calc(12px + env(safe-area-inset-left,0px));top:calc(56px + env(safe-area-inset-top,0px))}}
+#fs-help{position:fixed;inset:0;z-index:40;background:rgba(10,8,6,.85);display:grid;place-items:center;padding:20px}
+#fs-help[hidden]{display:none}
+#fs-help .panel{max-width:440px;font-size:14px;gap:.7em}
+#fs-help ol{margin:0;padding-left:1.2em;display:grid;gap:.4em}
 body.padmode #padui p{font-size:13px}
 @media (max-height:360px){body.padmode #padui .swatch{display:none}body.padmode #padui h2{font-size:18px}}
 /* phone garage: shown in the TV lobby instead of the sticks */
@@ -303,7 +308,12 @@ body.display #h-room{display:inline}
   <div class="tb small" id="t-rb" data-b="5">RB</div>
 </div>
 <div id="padcust" aria-live="polite"></div>
-<div id="padui"><div class="swatch" id="pad-swatch"></div><h2 id="pad-title">Phone controller</h2><p id="pad-msg">Connecting…</p><button id="pad-leave" class="pbtn ghost leave" type="button" hidden>Leave room</button><button id="pad-retry" class="pbtn ghost" type="button" hidden>Try again</button></div>
+<div id="fs-help" hidden><div class="panel"><h2 style="margin:0">Full screen on iPhone</h2>
+  <p class="note" style="margin:0">iPhone Safari doesn't let web pages hide its address bar. Add the game to your Home Screen instead; it then opens with no Safari bars at all:</p>
+  <ol><li>Tap the <b>Share</b> button (the square with an arrow) in Safari.</li><li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open <b>Tank Team</b> from your Home Screen, tap <b>Play online</b>; the last room code is already filled in. Tap <b>Use this phone as a controller</b>.</li></ol>
+  <p class="note" style="margin:0">The swipe bar at the very bottom of the iPhone always stays (iOS doesn't let any app turn it off), but it ignores short taps.</p>
+  <button id="fs-help-close" class="pbtn" type="button">Got it</button></div></div>
+<div id="padui"><div class="swatch" id="pad-swatch"></div><h2 id="pad-title">Phone controller</h2><p id="pad-msg">Connecting…</p><button id="pad-leave" class="pbtn ghost leave" type="button" hidden>Leave room</button><button id="pad-fs" class="pbtn ghost" type="button" hidden>⛶ Full screen</button><button id="pad-retry" class="pbtn ghost" type="button" hidden>Try again</button></div>
 <div id="rotate">Turn your phone sideways to play.</div>
 <div id="net" hidden>
   <div class="net-card" role="dialog" aria-modal="true" aria-labelledby="net-title">
@@ -4148,6 +4158,7 @@ function custHTML(i, sl, n, unl) {
       <canvas id="pc-prev" width="640" height="360" aria-label="Your tank"></canvas>
       <div class="pc-name">${S.name}</div><p class="pc-desc">${esc(S.desc || 'The all-rounder: bouncing shells and mines.')}</p>
       <div class="pc-actions" style="margin-top:10px"><button type="button" class="pbtn" data-pc="start">Start game</button><button type="button" class="pbtn ghost leave" data-pc="leaveroom">Leave room</button></div>
+      ${isFullscreenish() ? '' : '<div class="pc-actions" style="margin-top:8px"><button type="button" class="pbtn ghost" data-pc="fs">⛶ Full screen</button></div>'}
     </div>
     <div class="pc-right">
       <h3>Color · ${COLORS[sl.color][0]}</h3><div class="sw-row">${sw}</div>
@@ -4165,6 +4176,7 @@ padCustEl.addEventListener('click', e => {
     case 'start': pressPad(9); break;
     case 'leave': pressPad(1); break;
     case 'leaveroom': armLeave(b); break;
+    case 'fs': controllerFullscreen(); break;
     case 'color': if (i >= 0) setPref(i, { color: +v }); break;
     case 'trail': if (i >= 0) setPref(i, { trail: +v }); break;
     case 'tank': if (i >= 0 && unlockedChassis().includes(v)) setPref(i, { chassis: v }); break;
@@ -4221,6 +4233,7 @@ function qrImg(code) {
 }
 function startPadMode(code) {
   code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  store.set('rr-last-room', code);
   PAD.mode = true; PAD.code = code; PAD.retries = 0; enableTouch(); document.body.classList.add('padmode'); requestWake();
   closeNet(); $('#pad-retry').hidden = true; PAD.msg = ''; PAD.err = '';
   joinRoom(code);
@@ -4247,9 +4260,10 @@ function updatePadUi() {
       : G.state === 'reels' ? 'Spinning up the next wave. Press A to skip.'
       : G.state === 'gameover' ? 'Game over. Press A to go back to the lobby.'
       : G.state === 'clear' ? 'Level cleared!'
-      : `Level ${G.level} · ${G.lives} ${G.lives === 1 ? 'life' : 'lives'}. Left stick moves, right stick aims (push far to fire). ☰ pauses.`;
+      : `Level ${G.level} · ${G.lives} ${G.lives === 1 ? 'life' : 'lives'}. Left stick moves, right stick aims (push far to fire), A lays a mine, ☰ pauses.`;
   }
   $('#pad-leave').hidden = NET.mode !== 'client';
+  $('#pad-fs').hidden = isFullscreenish();
   const col = sl ? slotColor(i) : 'transparent', key = title + '|' + msg + '|' + col;
   if (key === lastPadUi) return; lastPadUi = key;
   $('#pad-title').textContent = title; $('#pad-msg').textContent = msg; $('#pad-swatch').style.background = col;
@@ -4316,6 +4330,23 @@ function toggleFullscreen() {
   } catch (e) {}
 }
 $('#fs-btn').addEventListener('click', () => { $('#fs-btn').blur(); toggleFullscreen(); });
+// Already without browser bars: real full screen, or opened from the Home Screen as an app
+const isStandalone = () => !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches));
+const isFullscreenish = () => !!(document.fullscreenElement || document.webkitFullscreenElement) || isStandalone();
+// Controller full screen: where the browser allows it (Android Chrome, iPad) hide the bars and lock landscape;
+// iPhone Safari can't, so explain the Home Screen way instead
+function controllerFullscreen() {
+  if (canFullscreen()) {
+    try {
+      const r = (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen).call(fsEl, { navigationUI: 'hide' });
+      if (r && r.then) r.then(() => { try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) {} }, () => { $('#fs-help').hidden = false; });
+    } catch (e) { $('#fs-help').hidden = false; }
+    setTimeout(() => { if (!isFullscreenish()) $('#fs-help').hidden = false; }, 700);
+  } else $('#fs-help').hidden = false;
+}
+$('#pad-fs').addEventListener('click', e => { e.currentTarget.blur(); controllerFullscreen(); });
+$('#fs-help-close').addEventListener('click', () => { $('#fs-help').hidden = true; });
+for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(ev, () => { lastCust = ''; resize(); });
 // Keep the screen on while hosting for a TV or using a phone as a controller
 let wakeLock = null;
 async function requestWake() {
@@ -4362,7 +4393,7 @@ function frame(now) {
 addEventListener('beforeunload', () => { try { if (NET.peer) NET.peer.destroy(); } catch (e) {} });
 if (location.hash === '#debug') window.RR_DEBUG = { G, loadLevel, genLayout, chooseSkill, pickSkills, SKILLS, aimPath, makeEnemy, hurt: hurtTank, MUSIC, TRACKS };
 resize(); renderNet();
-{ const m = /^#pad=([A-Za-z0-9]{5})$/.exec(location.hash); if (m) startPadMode(m[1]); }
+{ const m = /^#pad=([A-Za-z0-9]{5})$/.exec(location.hash); if (m) startPadMode(m[1]); else { const last = store.get('rr-last-room', ''); if (typeof last === 'string' && /^[A-Z0-9]{5}$/.test(last)) codeIn.value = last; } }
 requestAnimationFrame(t => { last = t; requestAnimationFrame(frame); });
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { staticDirty = true; });
 })();
