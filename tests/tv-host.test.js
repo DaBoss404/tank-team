@@ -93,6 +93,35 @@ async function until(fn, ms = 4000) { const t0 = Date.now(); while (Date.now() -
     await ctx.close();
   }
 
+  // ---------- 2c. iPhone Chrome: no Fullscreen API, Home Screen route ----------
+  {
+    const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true,
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.73 Mobile/15E148 Safari/604.1' });
+    await ctx.addInitScript({ path: path.join(__dirname, 'fakepeer.js') });
+    const host = watch(await ctx.newPage(), 'ios-host'); await host.setViewportSize({ width: 1280, height: 800 });
+    await host.goto(URL + '#debug'); await wait(300);
+    await host.click('#net-btn'); await host.click('#net-host-tv');
+    await until(() => host.evaluate(() => !!document.querySelector('.lobby .bigcode')));
+    const code = await host.evaluate(() => document.querySelector('.lobby .bigcode').textContent);
+    const ip = watch(await ctx.newPage(), 'iphone-chrome');
+    await ip.addInitScript(() => { for (const o of [Element.prototype, HTMLElement.prototype]) { delete o.requestFullscreen; delete o.webkitRequestFullscreen; } Object.defineProperty(Element.prototype, 'requestFullscreen', { value: undefined }); Object.defineProperty(Element.prototype, 'webkitRequestFullscreen', { value: undefined }); });
+    await ip.goto(URL + '#pad=' + code);
+    await until(async () => (await ip.textContent('#pad-title')).startsWith('Room'));
+    check('iPhone: room link is removed from the address (Add to Home Screen saves the game)', await ip.evaluate(() => location.hash === ''));
+    await ip.click('#padcust [data-pc="join"]'); await wait(300);
+    await ip.click('#padcust [data-pc="fs"]'); await wait(300);
+    const help = await ip.evaluate(() => ({ shown: !document.querySelector('#fs-help').hidden, text: document.querySelector('#fs-help').textContent }));
+    check('iPhone Chrome: Full screen explains the Home Screen way, with Chrome steps', help.shown && /Chrome/.test(help.text) && /Add to Home Screen/.test(help.text) && new RegExp(code).test(help.text), help.text.slice(0, 120));
+    await ip.click('#fs-help-close');
+    await ip.reload(); await until(async () => (await ip.textContent('#pad-title')).length > 0);
+    check('iPhone: reloading the controller page stays a controller', await until(() => ip.evaluate(() => document.body.classList.contains('padmode'))));
+    await ip.click('#padcust [data-pc="leaveroom"]'); await ip.click('#padcust [data-pc="leaveroom"]'); await wait(600);
+    check('iPhone: title offers one tap to be the controller for the last room', await ip.evaluate(c => { const b = document.querySelector('[data-act="padlast"]'); return !!b && b.textContent.includes(c); }, code));
+    await ip.click('[data-act="padlast"]');
+    check('iPhone: that button rejoins the room as a controller', await until(async () => (await ip.evaluate(() => document.body.classList.contains('padmode'))) && (await ip.textContent('#pad-title')).startsWith('Room')));
+    await ctx.close();
+  }
+
   // ---------- 3+. display-only TV host with phones ----------
   const ctx = await b.newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true }); // iPad-like landscape with touch
   await ctx.addInitScript({ path: path.join(__dirname, 'fakepeer.js') });
@@ -131,6 +160,7 @@ async function until(fn, ms = 4000) { const t0 = Date.now(); while (Date.now() -
   check('Leave room asks for a second tap', /again/i.test(await phones[4].textContent('#padcust [data-pc="leaveroom"]')));
   await phones[4].click('#padcust [data-pc="leaveroom"]'); await wait(700);
   check('phone that leaves the room goes back to the title screen', await phones[4].evaluate(() => !document.body.classList.contains('padmode') && /Tank/.test(document.querySelector('#overlay h1').textContent) && !/#pad=/.test(location.hash)));
+  check('leaving on purpose shows no "host closed" message', await phones[4].evaluate(() => document.querySelector('#net').hidden && !/host closed/i.test(document.querySelector('#net-status').textContent)));
   check('TV lobby counts the phone as gone', conns5 && await tv.evaluate(() => /4 phones connected/.test(document.querySelector('#overlay').textContent)));
   check('TV lobby says all 4 slots are full', await tv.evaluate(() => /All 4 player slots are full/.test(document.querySelector('#overlay').textContent)));
   await tv.screenshot({ path: path.join(__dirname, 'out-tv-lobby-full.png') });

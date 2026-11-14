@@ -308,10 +308,10 @@ body.display #h-room{display:inline}
   <div class="tb small" id="t-rb" data-b="5">RB</div>
 </div>
 <div id="padcust" aria-live="polite"></div>
-<div id="fs-help" hidden><div class="panel"><h2 style="margin:0">Full screen on iPhone</h2>
-  <p class="note" style="margin:0">iPhone Safari doesn't let web pages hide its address bar. Add the game to your Home Screen instead; it then opens with no Safari bars at all:</p>
-  <ol><li>Tap the <b>Share</b> button (the square with an arrow) in Safari.</li><li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open <b>Tank Team</b> from your Home Screen, tap <b>Play online</b>; the last room code is already filled in. Tap <b>Use this phone as a controller</b>.</li></ol>
-  <p class="note" style="margin:0">The swipe bar at the very bottom of the iPhone always stays (iOS doesn't let any app turn it off), but it ignores short taps.</p>
+<div id="fs-help" hidden><div class="panel"><h2 style="margin:0" id="fs-help-title">Full screen</h2>
+  <p class="note" style="margin:0" id="fs-help-why"></p>
+  <ol id="fs-help-steps"></ol>
+  <p class="note" style="margin:0">The thin swipe bar at the very bottom of the iPhone always stays (iOS doesn't let any app turn it off), but it ignores short taps.</p>
   <button id="fs-help-close" class="pbtn" type="button">Got it</button></div></div>
 <div id="padui"><div class="swatch" id="pad-swatch"></div><h2 id="pad-title">Phone controller</h2><p id="pad-msg">Connecting…</p><button id="pad-leave" class="pbtn ghost leave" type="button" hidden>Leave room</button><button id="pad-fs" class="pbtn ghost" type="button" hidden>⛶ Full screen</button><button id="pad-retry" class="pbtn ghost" type="button" hidden>Try again</button></div>
 <div id="rotate">Turn your phone sideways to play.</div>
@@ -3179,7 +3179,7 @@ function openClientPeer(code) {
       setNetStatus('Connected. Press A (or Space) to take a slot.'); PAD.retries = 0;
     });
     conn.on('data', onClientData);
-    conn.on('close', () => { if (NET.mode === 'client' && NET.hostConn === conn) leaveRoom('The host closed the room.'); });
+    conn.on('close', () => { if (NET.mode === 'client' && NET.hostConn === conn && !NET.leaving) leaveRoom('The host closed the room.'); });
   });
   peer.on('call', onCall);
   peer.on('disconnected', () => { if (NET.peer === peer && !peer.destroyed) { try { peer.reconnect(); } catch (e) {} } });
@@ -3291,6 +3291,7 @@ function clientUpdate(dt) {
 }
 function leaveRoom(msg) {
   const was = NET.mode;
+  NET.leaving = false;
   setVoice(false, true);
   for (const id in NET.audio) removeAudio(id);
   try { if (NET.peer) NET.peer.destroy(); } catch (e) {}
@@ -3438,6 +3439,7 @@ function armLeave(btn) {
 // Host: tell everyone the room is closing (they go back to the title). Player: tell the host, whose screen drops your tank and slot.
 function leaveRoomNow() {
   const was = NET.mode;
+  NET.leaving = true; // our own goodbye closes the connection; that is not the host leaving
   if (PAD.mode) exitPadMode();
   if (was === 'host') { broadcast({ t: 'closed' }); setTimeout(() => leaveRoom(''), 250); }
   else if (was === 'client') { send({ t: 'bye' }); setTimeout(() => leaveRoom(''), 200); }
@@ -3445,6 +3447,7 @@ function leaveRoomNow() {
 }
 // Back from phone-controller mode to the normal game page
 function exitPadMode() {
+  try { sessionStorage.removeItem('rr-pad'); } catch (e) {}
   PAD.mode = false; clearTimeout(PAD.retryT); PAD.retryT = 0;
   document.body.classList.remove('padmode', 'cust');
   if (/^#pad=/.test(location.hash)) try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
@@ -3468,6 +3471,7 @@ ov.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   b.blur(); unlockAudio();
   if (NET.display) return; // TV display: everything is done from the phones
+  if (b.dataset.act === 'padlast') { const c = store.get('rr-last-room', ''); if (c) startPadMode(c); return; }
   if (b.dataset.act === 'skill') { const i = +b.dataset.i; if (NET.mode === 'client') send({ t: 'pick', i }); else chooseSkill(i); return; }
   if (b.dataset.act === 'title') {
     // three quick taps on the title open the cheat window
@@ -4001,8 +4005,12 @@ function overlayHTML() {
       const netLine = NET.mode === 'off'
         ? `<div class="note">Playing with friends on other computers? Click <b>Play online</b> at the top.</div>`
         : `<div class="note">Online room <b>${esc(NET.code)}</b> · ${Math.max(1, NET.roster.length)} connected.${NET.voice ? ' Voice chat is on.' : ' Press <span class="k">V</span> or <span class="k">VIEW</span> to turn voice chat on.'}</div>`;
+      const lastRoom = store.get('rr-last-room', '');
+      const padLast = TOUCH.on && NET.mode === 'off' && typeof lastRoom === 'string' && /^[A-Z0-9]{5}$/.test(lastRoom)
+        ? `<div class="row" style="justify-content:center"><button type="button" class="pbtn" data-act="padlast" style="min-height:48px;font-size:16px">Be the controller for room ${esc(lastRoom)}</button></div>` : '';
       const tvLine = TOUCH.on && NET.mode === 'off' ? `<div class="note">Want the game on a TV? Open this site in the TV's browser (or on a computer plugged into the TV), click <b>Play online</b> → <b>Host as display only (TV)</b>, then scan the QR code with this phone to use it as a controller. An iPad can also host and be mirrored to an Apple TV.</div>` : '';
       return `<div class="panel title"><h1 data-act="title">Tank <span>Team</span></h1>
+        ${padLast}
         ${NET.mode === 'host' ? `<div class="qr">${qrImg(NET.code)}<span class="note">Phones can be controllers: scan this code with a phone camera, then press A on the phone to join.</span></div>` : `<p class="sub">Endless co-op tank combat for up to four players. Shells bounce off walls, mines clear crates, and a destroyed tank sits out until the next level. After every level the slot machines pick the next wave, and solo players pick a skill every 3 levels. A boss arrives every 10 levels.</p>`}
         <div class="slots">${[0, 1, 2, 3].map(slotCard).join('')}</div>
         <div class="row"><span>${ffTxt}</span><span class="note">D-pad ◀ ▶ color, ▲ ▼ trail, <span class="k">LB</span> <span class="k">RB</span> or <span class="k">Z</span> <span class="k">C</span> tank.</span></div>
@@ -4234,6 +4242,8 @@ function qrImg(code) {
 function startPadMode(code) {
   code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   store.set('rr-last-room', code);
+  try { sessionStorage.setItem('rr-pad', code); } catch (e) {}
+  if (/^#pad=/.test(location.hash)) try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   PAD.mode = true; PAD.code = code; PAD.retries = 0; enableTouch(); document.body.classList.add('padmode'); requestWake();
   closeNet(); $('#pad-retry').hidden = true; PAD.msg = ''; PAD.err = '';
   joinRoom(code);
@@ -4335,14 +4345,31 @@ const isStandalone = () => !!(navigator.standalone || (window.matchMedia && matc
 const isFullscreenish = () => !!(document.fullscreenElement || document.webkitFullscreenElement) || isStandalone();
 // Controller full screen: where the browser allows it (Android Chrome, iPad) hide the bars and lock landscape;
 // iPhone Safari can't, so explain the Home Screen way instead
+const isIOS = () => /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// iPhone browsers all run on Apple's Safari engine, which can't hide its bars for a web page; a Home Screen app has none
+function showFsHelp() {
+  const ua = navigator.userAgent, chrome = /CriOS/.test(ua), firefox = /FxiOS/.test(ua), edge = /EdgiOS/.test(ua);
+  const name = chrome ? 'Chrome' : firefox ? 'Firefox' : edge ? 'Edge' : 'Safari';
+  $('#fs-help-title').textContent = `Full screen in ${name} on iPhone`;
+  $('#fs-help-why').textContent = isIOS()
+    ? `On iPhone, ${name === 'Safari' ? 'Safari' : name + ' runs on Apple\'s Safari engine, and Apple'} doesn't let any browser hide its bars for a web page. Add the game to your Home Screen instead: it then opens full screen with no browser bars at all.`
+    : 'This browser does not allow full screen here. Add the game to your Home Screen (or install it from the browser menu) to play without browser bars.';
+  const share = chrome ? 'Tap the <b>Share</b> button at the right end of Chrome\'s address bar (or ⋯ → <b>Share</b>).'
+    : firefox ? 'Tap the menu button (☰) and then <b>Share</b>.'
+    : edge ? 'Tap the menu button (⋯) and then <b>Share</b>.'
+    : 'Tap the <b>Share</b> button (the square with an arrow).';
+  $('#fs-help-steps').innerHTML = `<li>${share}</li><li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>. (Needs iOS 16.4 or newer in ${name}.)</li>`
+    + `<li>Open <b>Tank Team</b> from your Home Screen and tap <b>Be the controller for room ${esc(PAD.code || store.get('rr-last-room', '') || '…')}</b>.</li>`;
+  $('#fs-help').hidden = false;
+}
 function controllerFullscreen() {
   if (canFullscreen()) {
     try {
       const r = (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen).call(fsEl, { navigationUI: 'hide' });
-      if (r && r.then) r.then(() => { try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) {} }, () => { $('#fs-help').hidden = false; });
-    } catch (e) { $('#fs-help').hidden = false; }
-    setTimeout(() => { if (!isFullscreenish()) $('#fs-help').hidden = false; }, 700);
-  } else $('#fs-help').hidden = false;
+      if (r && r.then) r.then(() => { try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) {} }, () => showFsHelp());
+    } catch (e) { showFsHelp(); }
+    setTimeout(() => { if (!isFullscreenish()) showFsHelp(); }, 700);
+  } else showFsHelp();
 }
 $('#pad-fs').addEventListener('click', e => { e.currentTarget.blur(); controllerFullscreen(); });
 $('#fs-help-close').addEventListener('click', () => { $('#fs-help').hidden = true; });
@@ -4393,7 +4420,8 @@ function frame(now) {
 addEventListener('beforeunload', () => { try { if (NET.peer) NET.peer.destroy(); } catch (e) {} });
 if (location.hash === '#debug') window.RR_DEBUG = { G, loadLevel, genLayout, chooseSkill, pickSkills, SKILLS, aimPath, makeEnemy, hurt: hurtTank, MUSIC, TRACKS };
 resize(); renderNet();
-{ const m = /^#pad=([A-Za-z0-9]{5})$/.exec(location.hash); if (m) startPadMode(m[1]); else { const last = store.get('rr-last-room', ''); if (typeof last === 'string' && /^[A-Z0-9]{5}$/.test(last)) codeIn.value = last; } }
+{ let again = null; try { again = sessionStorage.getItem('rr-pad'); } catch (e) {}
+  const m = /^#pad=([A-Za-z0-9]{5})$/.exec(location.hash); if (m) startPadMode(m[1]); else if (again) startPadMode(again); else { const last = store.get('rr-last-room', ''); if (typeof last === 'string' && /^[A-Z0-9]{5}$/.test(last)) codeIn.value = last; } }
 requestAnimationFrame(t => { last = t; requestAnimationFrame(frame); });
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { staticDirty = true; });
 })();
